@@ -2,13 +2,36 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System.Collections;
+using TMPro;
+
+[System.Serializable]
+public class Data
+{
+    public Content content;
+}
+
+[System.Serializable]
+public class Content
+{
+    public float[] bboxes;
+    public string[] pred_labels;
+}
 
 public class WebcamUploader : MonoBehaviour
 {
-    public string uploadUrl = "http://165.194.114.40:7531/upload";
-    public string latestJsonUrl = "http://165.194.114.40:7531/latest";
+    public TMP_Dropdown url_dropdown;
+    public string uploadUrl = "http://165.194.115.91:8001/upload";
     private WebCamTexture webcamTexture;
-    float timer = 0.0f;
+    private Texture2D snap;
+    public float captureInterval = 3.0f; // 캡처 및 업로드 주기(초)
+    private float timer = 0.0f;
+
+    void Awake()
+    {
+        url_dropdown.onValueChanged.AddListener(OnDropdownEvent);
+        string selectedText = url_dropdown.options[url_dropdown.value].text;
+        Debug.Log("현재 선택된 옵션: " + selectedText);
+    }
 
     void Start()
     {
@@ -17,12 +40,28 @@ public class WebcamUploader : MonoBehaviour
         RawImage rawImage = GetComponent<RawImage>();
         rawImage.texture = webcamTexture;
         webcamTexture.Play();
-        InitRawImage();
-        // 일정 시간 후 이미지 캡처 & 업로드
-        //InvokeRepeating("StartCaptureAndUpload", 1f, 3f);
+        StartCoroutine(UpdateRawImage());
     }
 
-    void InitRawImage()
+    void Update()
+    {
+        timer += Time.deltaTime;
+        if (timer >= captureInterval)
+        {
+            timer = 0f;
+            StartCoroutine(UpdateRawImage());
+            StartCaptureAndUpload();
+        }
+    }
+
+    public void OnDropdownEvent(int index)
+    {
+        Debug.Log($"Dropdown Value : {index}");         
+        string selectedText = url_dropdown.options[url_dropdown.value].text;
+        uploadUrl = selectedText;
+    }
+
+    IEnumerator UpdateRawImage()
     {
         // 웹캠 텍스처를 Texture2D로 변환
         RawImage rawImage = GetComponent<RawImage>();
@@ -32,11 +71,6 @@ public class WebcamUploader : MonoBehaviour
 
         float webcamWidth = webcamTexture.width;
         float webcamHeight = webcamTexture.height;
-
-        Debug.Log("displayWidth = " + displayWidth);
-        Debug.Log("displayHeight = " + displayHeight);
-        Debug.Log("webcamWidth = " + webcamWidth);
-        Debug.Log("webcamHeight = " + webcamHeight);
 
         float webcamRatio = webcamWidth / webcamHeight;
         float displayRatio = displayWidth / displayHeight;
@@ -56,7 +90,10 @@ public class WebcamUploader : MonoBehaviour
             scaledWidth = (int)(displayHeight * webcamRatio);
         }
 
-        Texture2D snap = new Texture2D((int)displayWidth, (int)displayHeight);
+        if (snap == null || snap.width != (int)displayWidth || snap.height != (int)displayHeight)
+        {
+            snap = new Texture2D((int)displayWidth, (int)displayHeight);
+        }
         Color[] pixels = webcamTexture.GetPixels();
         Color[] scaledPixels = new Color[(int)displayWidth * (int)displayHeight];
 
@@ -90,58 +127,40 @@ public class WebcamUploader : MonoBehaviour
         snap.SetPixels(scaledPixels);
         snap.Apply();
         GetComponent<RawImage>().texture = snap;
+        yield return null;
     }
 
     void StartCaptureAndUpload()
     {
         Debug.Log("StartCaptureAndUpload called");
-        //StartCoroutine(CaptureAndUpload());
+        StartCoroutine(CaptureAndUpload());
     }
 
-    // IEnumerator CaptureAndUpload()
-    // {
-    //     // Debug.Log("CaptureAndUpload called");
-    //     // yield return new WaitForSeconds(2f); // 웹캠 초기화 대기
-
-        
-    //     // // PNG/JPG로 인코딩
-    //     // byte[] imageData = snap.EncodeToJPG();
-
-    //     // // API #1 - 이미지 업로드
-    //     // WWWForm form = new WWWForm();
-    //     // form.AddBinaryData("image", imageData, "webcam" + System.DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jpg", "image/jpeg");
-        
-    //     // using (UnityWebRequest uploadRequest = UnityWebRequest.Post(uploadUrl, form))
-    //     // {
-    //     //     yield return uploadRequest.SendWebRequest();
-    //     //     if (uploadRequest.result == UnityWebRequest.Result.Success)
-    //     //     {
-    //     //         Debug.Log("Upload complete");
-    //     //         // API #2 - 결과 JSON 가져오기
-    //     //         StartCoroutine(GetJsonData());
-    //     //     }
-    //     //     else
-    //     //     {
-    //     //         Debug.LogError("Upload failed: " + uploadRequest.error);
-    //     //     }
-    //     // }
-    // }
-
-    IEnumerator GetJsonData()
+    IEnumerator CaptureAndUpload()
     {
-        using (UnityWebRequest jsonRequest = UnityWebRequest.Get(latestJsonUrl))
-        {
-            yield return jsonRequest.SendWebRequest();
+        // Debug.Log("CaptureAndUpload called");
+        // yield return new WaitForSeconds(2f); // 웹캠 초기화 대기
 
-            if (jsonRequest.result == UnityWebRequest.Result.Success)
+        
+        // PNG/JPG로 인코딩
+        byte[] imageData = snap.EncodeToJPG();
+
+        // API #1 - 이미지 업로드
+        WWWForm form = new WWWForm();
+        form.AddBinaryData("image", imageData, "webcam" + System.DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".jpg", "image/jpeg");
+        
+        using (UnityWebRequest uploadRequest = UnityWebRequest.Post(uploadUrl, form))
+        {
+            yield return uploadRequest.SendWebRequest();
+            if (uploadRequest.result == UnityWebRequest.Result.Success)
             {
-                Debug.Log("JSON result: " + jsonRequest.downloadHandler.text);
-                // JsonUtility.FromJson<T>() 또는 Newtonsoft.Json 사용 가능
+                Debug.Log("Upload complete");
             }
             else
             {
-                Debug.LogError("Get JSON failed: " + jsonRequest.error);
+                Debug.LogError("Upload failed: " + uploadRequest.error);
             }
         }
     }
+
 }
