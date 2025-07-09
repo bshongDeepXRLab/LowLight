@@ -20,14 +20,21 @@ public class Content
 public class WebcamUploader : MonoBehaviour
 {
     public TMP_Dropdown url_dropdown;
-    public string uploadUrl = "http://165.194.115.91:8001/upload";
+    private string uploadUrl = "http://165.194.115.91:8001/upload";
     private WebCamTexture webcamTexture;
     private Texture2D snap;
-    public float captureInterval = 3.0f; // 캡처 및 업로드 주기(초)
+    private float captureInterval = 3.0f; // 캡처 및 업로드 주기(초)
     private float timer = 0.0f;
+
+    public Button uploadBtn;
+    public TextMeshProUGUI btnText;
+    public TextMeshProUGUI logText;
+    public TMP_InputField inputField;
+    private bool isUploadStart = false;
 
     void Awake()
     {
+        uploadBtn.onClick.AddListener(OnBtnClick);
         url_dropdown.onValueChanged.AddListener(OnDropdownEvent);
         string selectedText = url_dropdown.options[url_dropdown.value].text;
         Debug.Log("현재 선택된 옵션: " + selectedText);
@@ -41,24 +48,46 @@ public class WebcamUploader : MonoBehaviour
         rawImage.texture = webcamTexture;
         webcamTexture.Play();
         StartCoroutine(UpdateRawImage());
+        btnText.text = "업로드 시작";
     }
 
     void Update()
     {
+        StartCoroutine(UpdateRawImage());
         timer += Time.deltaTime;
-        if (timer >= captureInterval)
+        if(isUploadStart)
         {
-            timer = 0f;
-            StartCoroutine(UpdateRawImage());
-            StartCaptureAndUpload();
+            if (timer >= captureInterval)
+            {
+                timer = 0f;
+                StartCaptureAndUpload();
+            }
+        }
+        
+    }
+
+    public void OnBtnClick()
+    {
+        if(!isUploadStart)
+        {
+            string selectedText = url_dropdown.options[url_dropdown.value].text;
+            uploadUrl = selectedText;
+            captureInterval = float.Parse(inputField.text);
+            isUploadStart = true;
+            btnText.text = "업로드 중지";
+            logText.text = "";
+        }
+        else
+        {
+            isUploadStart = false;
+            btnText.text = "업로드 시작";
+            logText.text = "버튼을 눌러 업로드를 실행하세요";
         }
     }
 
     public void OnDropdownEvent(int index)
     {
-        Debug.Log($"Dropdown Value : {index}");         
-        string selectedText = url_dropdown.options[url_dropdown.value].text;
-        uploadUrl = selectedText;
+        Debug.Log($"Dropdown Value : {index}");      
     }
 
     IEnumerator UpdateRawImage()
@@ -154,10 +183,12 @@ public class WebcamUploader : MonoBehaviour
             yield return uploadRequest.SendWebRequest();
             if (uploadRequest.result == UnityWebRequest.Result.Success)
             {
+                logText.text += "Upload complete\n";
                 Debug.Log("Upload complete");
             }
             else
             {
+                logText.text += "Upload failed: " + uploadRequest.error + "\n";
                 Debug.LogError("Upload failed: " + uploadRequest.error);
             }
         }
